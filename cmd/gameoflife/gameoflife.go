@@ -9,42 +9,43 @@ import (
 )
 
 func main() {
-	generations := make(map[string]int)
-
-	world := entities.NewWorld(10, 10)
-	world.SetCellAlive(0, 0)
-	world.SetCellAlive(7, 5)
-	world.SetCellAlive(7, 6)
-	world.SetCellAlive(8, 7)
-	world.SetCellAlive(8, 7)
-	world.SetCellAlive(9, 8)
-	world.SetCellAlive(9, 8)
-	world.SetCellAlive(9, 7)
+	world := entities.NewWorld(
+		10,
+		10,
+		[][]int{
+			{0, 0},
+			{6, 5},
+			{7, 4},
+			{7, 5},
+			{8, 5},
+			{8, 6},
+		})
 	world.Print()
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(5 * time.Millisecond)
 	done := make(chan bool)
 	var wg sync.WaitGroup
 	wg.Add(1)
 
 	go func() {
 		defer wg.Done()
-		for i := 0; ; i++ {
+		for {
 			select {
 			case <-done:
 				fmt.Println("time up")
 				return
 			case <-ticker.C:
 				numAlive := world.CountAlive()
-				hash := world.StatusHash()
-				status := world.GetStatus(generations)
-				fmt.Printf("Iteration: %d - Status: %s - Num cells alive: %d - Hash: %s", i, status, numAlive, hash)
-				world = world.Evolve()
+				generationStep := world.GetGenerationStep()
+				fmt.Printf("Generation: %d - Num cells alive: %d\n", generationStep, numAlive)
+				world.Step()
 				world.Print()
+
+				status := world.GetStatus()
 				switch status {
 				case entities.Extinction:
 					fallthrough
 				case entities.Static:
-					fmt.Println("Stopping")
+					fmt.Printf("Stopping: %s\n", status)
 					return
 				}
 			}
