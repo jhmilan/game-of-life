@@ -4,15 +4,25 @@
 package entities
 
 import (
-	"crypto/sha256"
 	"fmt"
 )
 
 // World represents the board were the cells live
 type World struct {
-	x     int
-	y     int
-	cells [][]*Cell
+	x           int
+	y           int
+	generations []Generation
+}
+
+// NewWorld returns a new World instance of the given dimensions. All cells are dead by default
+func NewWorld(x, y int, points [][]int) World {
+	world := World{
+		x:           x,
+		y:           y,
+		generations: []Generation{newGenerationFromPoints(0, points)},
+	}
+
+	return world
 }
 
 // Status states the world status at some point
@@ -34,86 +44,61 @@ const (
 )
 
 // GetStatus returns the status of the world
-func (w World) GetStatus(generations map[string]int) Status {
+func (w World) GetStatus() Status {
 	numAlive := w.CountAlive()
-	if w.CountAlive() == 0 {
+	if numAlive == 0 {
 		return Extinction
 	}
-	hash := w.StatusHash()
-	if _, ok := generations[hash]; ok {
-		return Static
-	}
-	generations[hash] = numAlive
+	// hash := w.StatusHash()
+	// if _, ok := generations[hash]; ok {
+	// 	return Static
+	// }
+	// generations[hash] = numAlive
 	return Caos
 }
 
-// SetCellAlive sets a cell status as live
-func (w World) SetCellAlive(x, y int) {
-	if !w.ValidPosition(x, y) {
-		panic("invalid cell position")
+// LastGeneration returns the last generation of cells
+func (w World) LastGeneration() Generation {
+	if len(w.generations) == 0 {
+		panic("empty world - no generations")
 	}
-	w.cells[x][y].status = Alive
+	return w.generations[len(w.generations)-1]
 }
 
-// Evolve transitions all the cells of the world in one go. It performs a 'step' in time.
-// A new instance of the world is returned.
-func (w World) Evolve() World {
-	newWorld := NewWorld(w.x, w.y)
-	for i := range w.cells {
-		for j := range w.cells[i] {
-			newLifeStatus, _ := w.cells[i][j].CheckLifeStatus(w)
-			// we could log the transaction
-			if newLifeStatus == Alive {
-				newWorld.SetCellAlive(i, j)
-			}
-		}
+// Step evolves the world. It creates a new generation
+func (w *World) Step() {
+	lastGeneration := w.LastGeneration()
+	newCellsMap := make(CellsMap, 0)
+
+	for _, cell := range lastGeneration.cellsMap.GetRelevantCells() {
+		status, _ := cell.CheckLifeStatus(lastGeneration.cellsMap)
+		cell.status = status
+		newCellsMap[CellPositionFrom(cell.x, cell.y)] = cell
 	}
-	return newWorld
+
+	w.generations = append(w.generations, Generation{
+		step:     lastGeneration.step + 1,
+		cellsMap: newCellsMap,
+	})
 }
 
-// ValidPosition checks if a given x,y position is valid in the current world (not out of bounds)
-func (w World) ValidPosition(x, y int) bool {
-	if x < 0 || x >= w.x || y < 0 || y >= w.y {
-		return false
-	}
-	return true
-}
-
-// StatusHash returns a hash that represents the board status with a fixed length
-func (w World) StatusHash() string {
-	bitmap := make([]byte, w.x*w.y)
-	for i := range w.cells {
-		for j := range w.cells[i] {
-			if w.cells[i][j].status == Alive {
-				bitmap[i*w.x+j] = '1'
-			} else {
-				bitmap[i*w.x+j] = '0'
-			}
-		}
-	}
-	generationID := fmt.Sprintf("%d_%d_%d_%x", w.x, w.y, w.CountAlive(), bitmap)
-	sum := sha256.Sum256([]byte(generationID))
-	return fmt.Sprintf("%x", sum)
-}
-
-// CountAlive return the amount of alive cells
+// CountAlive returns the amount of alive cells
 func (w World) CountAlive() int {
-	numAlive := 0
-	for i := range w.cells {
-		for j := range w.cells[i] {
-			if w.cells[i][j].status == Alive {
-				numAlive++
-			}
-		}
-	}
-	return numAlive
+	return len(w.LastGeneration().cellsMap.GetAliveCells())
+}
+
+// GetGenerationStep returns the generation step
+func (w World) GetGenerationStep() int {
+	return w.LastGeneration().step
 }
 
 // Print plots the world in standard output
 func (w World) Print() {
-	for i := range w.cells {
-		for j := range w.cells[i] {
-			if w.cells[i][j].status == Dead {
+	cellsMap := w.LastGeneration().cellsMap
+	for x := range w.x {
+		for y := range w.y {
+			cell := cellsMap.CellAt(x, y)
+			if cell == nil || cell.status == Dead {
 				fmt.Print(" ")
 			} else {
 				fmt.Print("x")
@@ -121,22 +106,4 @@ func (w World) Print() {
 		}
 		fmt.Println()
 	}
-}
-
-// NewWorld returns a new World instance of the given dimensions. All cells are dead by default
-func NewWorld(x, y int) World {
-	world := World{
-		x: x,
-		y: y,
-	}
-	world.cells = make([][]*Cell, x)
-	for i := range world.cells {
-		world.cells[i] = make([]*Cell, y)
-	}
-	for i := 0; i < x; i++ {
-		for j := 0; j < y; j++ {
-			world.cells[i][j] = &Cell{x: i, y: j, status: Dead}
-		}
-	}
-	return world
 }

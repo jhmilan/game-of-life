@@ -4,14 +4,20 @@
 //go:generate stringer -type=Transition
 package entities
 
+import (
+	"fmt"
+	"maps"
+	"slices"
+)
+
 // LifeStatus represents the status of a Cell
 type LifeStatus int
 
 const (
-	// Alive means a cell is alive
-	Alive LifeStatus = iota
 	// Dead is the status of a cell when it dies
-	Dead
+	Dead LifeStatus = iota
+	// Alive means a cell is alive
+	Alive
 )
 
 // Transition represents a Cell transition from one step in time to the next one
@@ -30,6 +36,50 @@ const (
 	RemainsDead
 )
 
+// CellPosition is a string like 9_22 representing position (9,22) in the board
+type CellPosition string
+
+// CellPositionFrom returns a CellPosition given a point (x,y)
+func CellPositionFrom(x, y int) CellPosition {
+	return CellPosition(fmt.Sprintf("%d_%d", x, y))
+}
+
+// CellsMap maps positions to cells (dead or alive)
+type CellsMap map[CellPosition]Cell
+
+// GetAliveCells returns a slice with the alive cells
+func (cellsMap CellsMap) GetAliveCells() []Cell {
+	cells := []Cell{}
+	for _, cell := range cellsMap {
+		if cell.status == Alive {
+			cells = append(cells, cell)
+		}
+	}
+	return cells
+}
+
+// GetRelevantCells returns a slice with the cells that must be analyzed
+func (cellsMap CellsMap) GetRelevantCells() []Cell {
+	aliveCells := cellsMap.GetAliveCells()
+	allCells := append([]Cell{}, aliveCells...)
+	for _, aliveCell := range aliveCells {
+		allCells = append(allCells, aliveCell.GetNeighBours(cellsMap)...)
+	}
+	newCellMap := make(CellsMap, 0)
+	for _, c := range allCells {
+		newCellMap[CellPositionFrom(c.x, c.y)] = c
+	}
+	return slices.Collect(maps.Values(newCellMap))
+}
+
+// CellAt returns the cell at position (x,y) if any
+func (cellsMap CellsMap) CellAt(x, y int) *Cell {
+	if cell, ok := cellsMap[CellPositionFrom(x, y)]; ok {
+		return &cell
+	}
+	return nil
+}
+
 // Cell represents a point in the world that can be dead or alive
 type Cell struct {
 	x      int
@@ -41,8 +91,8 @@ type Cell struct {
 CheckLifeStatus determines the transition from one step in time to the next for the given cell. It depends on the
 neighborhood of the cell.
 */
-func (c Cell) CheckLifeStatus(w World) (LifeStatus, Transition) {
-	neighbours := c.GetNeighBours(w)
+func (c Cell) CheckLifeStatus(cellsMap CellsMap) (LifeStatus, Transition) {
+	neighbours := c.GetNeighBours(cellsMap)
 	numAliveNeighbors := 0
 	for _, neighbor := range neighbours {
 		if neighbor.status == Alive {
@@ -66,17 +116,19 @@ func (c Cell) CheckLifeStatus(w World) (LifeStatus, Transition) {
 }
 
 // GetNeighBours return the cells in the neighbourhood
-func (c Cell) GetNeighBours(w World) []*Cell {
-	cells := []*Cell{}
+func (c Cell) GetNeighBours(cellsMap CellsMap) []Cell {
+	cells := []Cell{}
 	for i := c.x - 1; i <= c.x+1; i++ {
 		for j := c.y - 1; j <= c.y+1; j++ {
-			if w.ValidPosition(i, j) {
-				if i == c.x && j == c.y {
-					// skip the cell
-					continue
-				}
-				cells = append(cells, w.cells[i][j])
+			if i == c.x && j == c.y {
+				// skip the cell
+				continue
 			}
+			newCell := Cell{x: i, y: j, status: Dead}
+			if cell, ok := cellsMap[CellPositionFrom(i, j)]; ok {
+				newCell.status = cell.status
+			}
+			cells = append(cells, newCell)
 		}
 	}
 
